@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<decorators defaultdir="/_decorators">
+    <decorator name="defframe" page="def_frame.jsp">
+        <pattern>/contract/*</pattern>
+    </decorator>
+    <decorator name="none"></decorator>
+    <decorator name="toptoolbar" page="top.jsp"></decorator>
+    <decorator name="leftmenupanel" page="left.jsp"></decorator>
+</decorators>

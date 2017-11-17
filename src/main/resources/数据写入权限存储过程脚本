@@ -1,0 +1,119 @@
+--这个脚本分两次执行
+--第一次执行
+create or replace PACKAGE smartforms_data_permission
+AS 
+--这个是游标
+TYPE custrctype IS REF CURSOR;
+--保存文档的数据权限
+-- document_id 文档id  creator 创建者
+PROCEDURE save_document_right(document_id in VARCHAR2,creator in VARCHAR2); 
+-- 文档写入权限
+function write_data_permission(app_id VARCHAR2,document_id VARCHAR2,userId VARCHAR2,deptId VARCHAR2) return int;
+
+END smartforms_data_permission;
+
+
+--第二次执行
+create or replace PACKAGE BODY smartforms_data_permission
+AS
+--保存文档的数据权限
+-- document_id 文档id  creator 创建者
+PROCEDURE save_document_right(document_id in VARCHAR2,creator in VARCHAR2)
+is
+begin
+--默认情况下保存文档时读取表单的预置权限信息 写入数据权限表
+insert into DAT_DOCUMENT_RIGHT(RIGHT_ID,CREATE_TIME,CREATOR,DOCUMENT_ID,RIGHT_OBJECT_ID,RIGHT_OBJECT_TYPE,RIGHT_TYPE,RIGHT_PASS_ON)
+select 'form_right:'||sys_guid(),sysdate,creator,document_id,RIGHT_OBJECT_ID,RIGHT_OBJECT_TYPE,RIGHT_TYPE,RIGHT_PASS_ON 
+from DET_FORM_RIGHT_SET;
+commit work;
+end save_document_right; 
+
+
+-- 文档写入权限
+function write_data_permission(app_id VARCHAR2,document_id VARCHAR2,userId VARCHAR2,deptId VARCHAR2) return int is
+ rc int;
+ --判断默认acl是否有权限
+ default_acl int;
+ --判断默认acl是否有权限的动态sql
+ default_acl_sql varchar2(4000);
+ 
+ --判断是否有设置文档权限
+ document_right_exist int;
+ --判断是否有设置文档权限的动态sql
+ 
+ document_right_exist_sql   varchar2(4000);
+ --判断文档权限的动态sql
+ document_right_sql   varchar2(4000);
+ --判断是否有文档权限
+ document_right int;
+ 
+  --判断acl是否有权限
+ acl int;
+ --判断acl是否有权限的动态sql
+ acl_sql varchar2(4000);
+ 
+begin
+
+  --判断默认acl权限的动态sql
+  default_acl_sql:='select count(ACL_ID) from DAT_APP_ACL where (ACL_LEVEL=''editor'' or  ACL_LEVEL=''manager'') 
+  and ACL_OBJECT_TYPE=''default''
+  and APP_ID='''||app_id||'''';
+  execute immediate default_acl_sql into default_acl;
+  
+   --Dbms_output.put_line(document_right_exist); 
+   --判断是否有设置文档权限
+  --document_right_exist等于0 说明没有设置权限直接跳过
+  document_right_exist_sql:='select count(DOCUMENT_ID)  from DAT_DOCUMENT_RIGHT where RIGHT_TYPE=''write'' 
+  and DOCUMENT_ID='''||document_id||'''';
+  --Dbms_output.put_line(document_right_exist_sql); 
+  execute immediate document_right_exist_sql into document_right_exist;
+  
+  --判断acl权限
+   acl_sql:='select count(ACL_ID) from DAT_APP_ACL 
+      where (ACL_LEVEL=''editor'' or  ACL_LEVEL=''manager'') 
+      and 
+      (
+        (ACL_OBJECT_TYPE=''employee'' and ACL_OBJECT_ID='''||userId||''') 
+         or (ACL_OBJECT_TYPE=''role'' and ACL_OBJECT_ID in (select ROLE_NUM from ORG_ROLE_MEMBER where EMP_NUM='''||userId||'''))
+         or (ACL_OBJECT_TYPE=''department'' and ACL_OBJECT_ID='''||deptId||''')
+       ) and APP_ID='''||userId||'''';
+   execute immediate acl_sql into acl;
+   
+   --判断默认acl权限
+  if default_acl>0 then
+     rc:=1;
+  --判断acl 权限
+  elsif acl>0 then
+    rc:=1;
+  --判断文档写入权限
+  elsif document_right_exist=0 then
+     rc:=1;
+     else 
+      --生成文档权限的动态sql
+     document_right_sql:='select count(DOCUMENT_ID) from DAT_DOCUMENT_RIGHT 
+      where 
+      (( RIGHT_OBJECT_TYPE=''employee''
+      and RIGHT_OBJECT_ID='''||userId||'''
+      )or (
+        RIGHT_OBJECT_TYPE=''role'' 
+      and RIGHT_OBJECT_ID in (select ROLE_NUM from ORG_ROLE_MEMBER where EMP_NUM='''||userId||''')
+      )or(
+       RIGHT_OBJECT_TYPE=''department'' 
+      and RIGHT_OBJECT_ID='''||deptId||'''
+      ))   
+      and right_type=''write''
+      and DOCUMENT_ID='''||document_id||'''';
+     --执行权限查询
+     execute immediate document_right_sql into document_right;
+     --等于0 没有写入权限
+     if document_right=0 then
+      rc:=0;
+      --不等于0 有写入的权限
+     else
+       rc:=1;
+     end if;
+   end if;  
+ return rc;
+ end write_data_permission;
+ 
+end smartforms_data_permission;

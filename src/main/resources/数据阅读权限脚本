@@ -1,0 +1,61 @@
+--要分成三次执行SQL
+
+--第一次执行：自定义类型
+create or replace type document_right_type as object
+ (
+   document_id VARCHAR2(50)
+ );
+ 
+ --第二次执行：自定义类型别名
+ create or replace type document_right_type_alis as table of document_right_type;
+ 
+ 
+ --第三次执行：获取文档权限的函数
+--userId 用户id
+--deptId 用户的部门id
+create or replace function get_document_right(userId varchar2,deptId varchar2)
+  return document_right_type_alis pipelined
+  is
+  v document_right_type;
+  begin
+   for r in (
+   --校验数据权限
+  select document_id from DAT_DOCUMENT 
+  where document_id in(
+  select DOCUMENT_ID from DAT_DOCUMENT_RIGHT 
+      where 
+      (
+      --按员工类型
+	  ( RIGHT_OBJECT_TYPE='employee'
+      and RIGHT_OBJECT_ID=userId
+      )
+	  or
+	  (
+        --按角色类型
+           RIGHT_OBJECT_TYPE='role' 
+         and RIGHT_OBJECT_ID in 
+		 (
+		   select ROLE_NUM from ORG_ROLE_MEMBER where EMP_NUM=userId
+		  )
+      )
+	  or
+	  (
+    --按部门
+       RIGHT_OBJECT_TYPE='department' 
+        and RIGHT_OBJECT_ID=deptId
+      )
+	 )
+     and  RIGHT_TYPE='read'
+   )
+   union all 
+   --合并无设置数据权限部分的数据
+   select document_id from DAT_DOCUMENT 
+   where document_id not in(
+   select document_id from DAT_DOCUMENT_RIGHT  where  RIGHT_TYPE='read'
+   ) 
+   ) loop
+     v:= document_right_type(r.document_id);
+     pipe row(v);
+  end loop;
+  return;
+  end;
